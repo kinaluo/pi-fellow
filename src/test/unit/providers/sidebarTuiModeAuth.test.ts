@@ -41,6 +41,8 @@ function setup() {
         session: { cwd: '/work', sessionFile: '/s/a.jsonl' },
         reloadPiAgentResources: vi.fn(async () => undefined),
         reloadSessionFromDisk: vi.fn(async () => undefined),
+        isReady: true,
+        suspendForTui: vi.fn(async () => undefined),
     };
     const tab = { id: 'tab-1', name: 'Tab', tuiMode: false, isStreaming: false, botView: false, session } as unknown as TabState;
     const host = {

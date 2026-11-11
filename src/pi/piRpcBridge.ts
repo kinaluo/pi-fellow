@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import * as path from 'node:path';
+import { getPiExtensionPath } from './extensionPath';
 import type { AgentBackend } from './agentBackend';
 import { HOST_TOOLS_COMMAND, type HostToolResultPayload } from './hostToolsProtocol';
 import { attachJsonlLineReader, serializeJsonLine } from './jsonl';
@@ -116,6 +118,10 @@ export class PiRpcBridge {
         const args = ['--mode', 'rpc', ...extraArgs];
         const extensionEnv: NodeJS.ProcessEnv = {};
         try {
+            if (this._backend === 'omp') {
+                const root = getPiExtensionPath();
+                if (root) args.push('--extension', path.join(root, 'out', 'pi-extension', 'sessionHandoff.js'));
+            }
             if (options.hostTools && this._backend === 'pi') {
                 this._piHostTools = new PiHostTools();
                 const launch = this._piHostTools.launch();
@@ -263,33 +269,36 @@ export class PiRpcBridge {
         });
     }
 
+    /** Stop the process but keep event subscribers: a restart reuses this bridge. */
     async stop(): Promise<void> {
         this._stopReading?.();
         this._stopReading = null;
 
-        if (this._process) {
-            try {
-                this._process.stdin.end();
-            } catch {
-                /* ignore */
-            }
-            this._process.kill('SIGTERM');
-            await new Promise<void>((resolve) => {
-                const timeout = setTimeout(() => {
-                    this._process?.kill('SIGKILL');
-                    resolve();
-                }, 2000);
-                this._process?.once('exit', () => {
+        const child = this._process;
+        if (child) {
+            const { promise: exited, resolve } = Promise.withResolvers<void>();
+            if (child.exitCode !== null || child.signalCode !== null) {
+                resolve();
+            } else {
+                const timeout = setTimeout(() => child.kill('SIGKILL'), 2000);
+                child.once('exit', () => {
                     clearTimeout(timeout);
                     resolve();
                 });
-            });
+            }
+            try {
+                child.stdin.end();
+            } catch {
+                /* ignore */
+            }
+            child.kill('SIGTERM');
+            // The session lease is released only on exit, even when SIGKILL was needed.
+            await exited;
             this._process = null;
         }
 
         this._disposeExtensionFiles();
         this._pending.clear();
-        this._listeners.clear();
     }
 
     private _disposeExtensionFiles(): void {
@@ -453,6 +462,11 @@ export class PiRpcBridge {
 
     async newSession(): Promise<{ cancelled: boolean }> {
         return this._data(await this._send({ type: 'new_session' }));
+    }
+
+    /** Wait for the session owner to persist its journal; the internal command makes no model request. */
+    async persistForTui(): Promise<void> {
+        this._data(await this._send({ type: 'prompt', message: '/vscode-session-handoff' }));
     }
 
     /**

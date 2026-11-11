@@ -77,7 +77,7 @@ const stylesConfig = {
  * ESM: Pi's loader rejects a CommonJS `exports.default` as "not a valid factory function".
  */
 const piExtensionConfig = {
-    entryPoints: ['src/piExtension/hostTools.ts', 'src/piExtension/permissionGate.ts'],
+    entryPoints: ['src/piExtension/hostTools.ts', 'src/piExtension/permissionGate.ts', 'src/piExtension/sessionHandoff.ts'],
     bundle: true,
     outdir: 'out/pi-extension',
     format: 'esm',

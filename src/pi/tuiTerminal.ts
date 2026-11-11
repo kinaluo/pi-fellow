@@ -231,5 +231,6 @@ export class TuiProcess {
         if (!this.exited) {
             this._pty.kill('SIGKILL');
         }
+        await exited;
     }
 }

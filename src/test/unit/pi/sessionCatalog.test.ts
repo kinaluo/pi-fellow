@@ -66,6 +66,22 @@ describe('session list', () => {
         expect(buildSessionDisplayList(sessions).map((s) => s.id)).toEqual(['new', 'old']);
     });
 
+    it('omits empty sessions even with a default title, but keeps worker and voice conversations', () => {
+        const empty = { ...session('empty', '/tmp/empty.jsonl'), name: 'New session', messageCount: 0 };
+        const spoken = { ...empty, id: 'spoken', path: '/tmp/spoken.jsonl', voiceTurns: 1 };
+        expect(buildSessionDisplayList([empty, spoken, session('worked', '/tmp/worked.jsonl')]).map((s) => s.id))
+            .toEqual(['spoken', 'worked']);
+    });
+
+    it('keeps the latest continuation and explicit forks, or the original when no continuation is listed', () => {
+        const original = session('original', '/tmp/original.jsonl');
+        const continued = { ...session('continued', '/tmp/continued.jsonl'), continuationOf: 'original' };
+        const latest = { ...session('latest', '/tmp/latest.jsonl'), continuationOf: 'continued' };
+        const fork = { ...session('fork', '/tmp/fork.jsonl'), parentSession: 'latest' };
+        expect(buildSessionDisplayList([original, continued, latest, fork]).map((s) => s.id)).toEqual(['latest', 'fork']);
+        expect(buildSessionDisplayList([original]).map((s) => s.id)).toEqual(['original']);
+    });
+
     it('counts user prompts as turns and reports the file size', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-session-'));
         const file = path.join(dir, '2026-01-01_abc.jsonl');

@@ -168,6 +168,7 @@ async function buildSessionInfoFromFileLiteAsync(filePath: string): Promise<Sess
                 name: name ?? id,
                 path: filePath,
                 cwd: typeof header.cwd === 'string' ? header.cwd : undefined,
+                continuationOf: typeof header.continuationOf === 'string' ? header.continuationOf : undefined,
                 messageCount,
                 turnCount,
                 sizeBytes: fileStat.size,
@@ -370,6 +371,7 @@ function parseSessionInfoFromText(filePath: string, text: string, fileStat: fs.S
         name: name ?? id,
         path: filePath,
         cwd: typeof header.cwd === 'string' ? header.cwd : undefined,
+        continuationOf: typeof header.continuationOf === 'string' ? header.continuationOf : undefined,
         messageCount,
         turnCount,
         sizeBytes: fileStat.size,
@@ -478,12 +480,13 @@ function hasCustomName(session: SessionInfo): boolean {
 }
 
 /**
- * Sessions shown in the resume list, newest activity first: those with worker messages, a name, or
- * a voice conversation. An untouched new session is left out.
+ * Sessions with worker messages or a voice conversation, newest activity first. Only the last
+ * session in an omp continuation chain is shown; explicit forks are independent.
  */
 export function buildSessionDisplayList(sessions: SessionInfo[], query = ''): SessionInfo[] {
+    const continued = new Set(sessions.flatMap((s) => s.continuationOf ? [s.continuationOf] : []));
     return sessions
-        .filter((s) => (hasCustomName(s) || (s.messageCount ?? 0) > 0 || (s.voiceTurns ?? 0) > 0) && matchesQuery(s, query))
+        .filter((s) => !continued.has(s.id) && ((s.messageCount ?? 0) > 0 || (s.voiceTurns ?? 0) > 0) && matchesQuery(s, query))
         .sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
 }
 

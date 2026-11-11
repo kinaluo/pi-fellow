@@ -430,6 +430,8 @@ export interface SessionInfo {
     lastModified?: number;
     created?: number;
     cwd?: string;
+    /** Original session ID for an automatic omp continuation; not set by an explicit fork. */
+    continuationOf?: string;
     /** All `message` entries (user, assistant, tool results). */
     messageCount?: number;
     /** User prompts — one per conversation turn. */

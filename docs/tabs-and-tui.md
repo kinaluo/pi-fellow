@@ -27,6 +27,7 @@
 - Otherwise open a new tab (`createEmptyTabState(backend, session cwd)`) and load it there, without overwriting the current tab. The current tab is reused only when it is a blank conversation (no messages, idle, not in Bot view, same backend and directory).
 - Loading goes through `SidebarTabs.loadSessionIntoTab` (`src/providers/sidebarTabs.ts`), shared with startup restore: a history-loading placeholder is shown, `tabReady` blocks sending, and the title starts as the session name. On failure the new tab is closed and the original tab and backend are restored.
 - If the current tab is in TUI mode, a new tab is opened and the TUI is started in it.
+- The resume list shows sessions with worker messages or a voice conversation, not empty sessions with a default title. An omp session header's `continuationOf` identifies an automatic continuation: only the last session in the chain is shown; explicit forks stay independent. This filters the list (`buildSessionDisplayList`, `src/pi/sessionCatalog.ts`), without deleting session files.
 
 ## Startup does not block the sidebar
 
@@ -52,6 +53,8 @@ While the window's first process starts and while tabs are being restored, `Side
 - Entering TUI is refused only when the current tab is streaming.
 - TUI mode is persisted with open tabs (`PersistedOpenTabs.tuiSessionPaths`, keyed by session file). The context key `oh-my-pi-chater.tuiMode` reflects the current tab.
 - Code: `src/providers/sidebarTuiMode.ts` (mode switching), `src/providers/sidebarTui.ts` (`TabTuis`, PTY processes), `src/pi/tuiTerminal.ts`, `src/webview/tuiView.ts`.
+- Before omp enters TUI, RPC runs the bundled `/vscode-session-handoff` command (`src/piExtension/sessionHandoff.ts`): the session owner calls `ensureOnDisk()` and `flush()`, so even a session with no first prompt can be resumed. The command makes no model request and adds no messages. RPC then exits, releasing the session lease before the TUI starts.
+- Both RPC and TUI shutdown wait for the process's actual exit, even after SIGKILL. On return to chat, a suspended omp worker restarts with `--session <file>`, keeping its event subscribers and loading the original conversation without creating a placeholder session.
 
 ### TUI tabs and the voice agent
 

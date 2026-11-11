@@ -131,8 +131,8 @@ export class SidebarTuiMode {
         const hadTui = !!this.tuis.get(tab.id);
         const ranAuth = this._authTabs.delete(tab.id);
         await this.tuis.stop(tab.id);
-        if (hadTui) {
-            // The TUI appended to the tab's session file; the idle RPC process holds stale state.
+        if (hadTui || tab.session.isSuspendedForTui) {
+            // Re-read the TUI's changes, or resume RPC if the handoff finished but the TUI never started.
             // After /login or /logout its model/auth snapshot is stale too: only a restart re-reads it.
             try {
                 await (ranAuth ? tab.session.reloadPiAgentResources() : tab.session.reloadSessionFromDisk());
@@ -160,6 +160,11 @@ export class SidebarTuiMode {
             // A worker that failed to start leaves no session file; the TUI then starts a new one.
             await tabReady(tab).catch(() => undefined);
             if (!tab.tuiMode || this._host.tabs.get(tabId) !== tab) return;
+            if (tab.session.isReady) await tab.session.suspendForTui();
+            if (!tab.tuiMode || this._host.tabs.get(tabId) !== tab) {
+                await tab.session.reloadSessionFromDisk();
+                return;
+            }
         }
         await this.tuis.start(tabId, {
             cwd:

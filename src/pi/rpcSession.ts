@@ -104,6 +104,12 @@ export class PiRpcSessionManager {
     private _onOpenSessionTree: (() => Promise<void> | void) | undefined;
     /** What the permission gate enforces in this worker; survives CLI restarts. */
     private _permission: PermissionGateState = { level: readDefaultPermissionLevel(), allowedTools: readAllowedTools() };
+    /** In-flight or completed omp handoff; kept until RPC restarts, even if the TUI failed to start. */
+    private _tuiHandoff: Promise<void> | undefined;
+
+    get isSuspendedForTui(): boolean {
+        return this._tuiHandoff !== undefined;
+    }
 
     constructor(outputChannel: vscode.OutputChannel) {
         this._outputChannel = outputChannel;
@@ -539,10 +545,9 @@ export class PiRpcSessionManager {
         const backend = this.backend;
         const file = this._shim?.sessionFile;
         await this._bridge.stop();
-        await this._bridge.start(cwd, [], backend, { permission: this._permission });
-        if (file && fs.existsSync(file)) {
-            await this._bridge.switchSession(file);
-        }
+        const args = file && fs.existsSync(file) ? ['--session', file] : [];
+        await this._bridge.start(cwd, args, backend, { permission: this._permission });
+        this._tuiHandoff = undefined;
         await this._applyRpcModesFromSettings();
         await this.syncFromRpc();
         this._outputChannel.appendLine('Pi RPC process restarted (reload)');
@@ -585,11 +590,34 @@ export class PiRpcSessionManager {
         }
     }
 
+    /** Persist omp's session and stop RPC to release its lease before the TUI opens the file. */
+    async suspendForTui(): Promise<void> {
+        if (this.backend !== 'omp') return;
+        if (!this._tuiHandoff) {
+            this._tuiHandoff = (async () => {
+                await this._bridge.persistForTui();
+                await this._refreshState();
+                const file = this._shim?.sessionFile;
+                if (!file || !fs.existsSync(file)) throw new Error('The agent did not persist the session for TUI');
+                await this._bridge.stop();
+            })().catch((err) => {
+                this._tuiHandoff = undefined;
+                throw err;
+            });
+        }
+        await this._tuiHandoff;
+    }
+
     /**
-     * Re-read the session file after another process (the TUI) appended to it. A same-path
-     * `switch_session` does not reliably reload, so bounce through a fresh (unpersisted) session.
+     * Re-read the session after the TUI exits. A suspended omp worker restarts on the same file;
+     * a running pi worker switches through a fresh (unpersisted) session to force a reload.
      */
     async reloadSessionFromDisk(): Promise<void> {
+        if (this._tuiHandoff) {
+            await this._tuiHandoff;
+            await this.reloadPiAgentResources();
+            return;
+        }
         const file = this._shim?.sessionFile;
         if (file && fs.existsSync(file)) {
             await this._bridge.newSession();
